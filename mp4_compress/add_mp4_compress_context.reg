@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.mp4\shell\Compress Video]
+@="Compress Video"
+
+[HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\.mp4\shell\Compress Video\command]
+@="powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:\\Users\\fergal\\AppData\\Local\\mp4_compress\\mp4_compress.ps1\" \"%1\""
