@@ -1,0 +1,5 @@
+*.zip
+*.exe
+mp4_compress/internal/mp4_compress.exe
+mp4_compress/packager.exe
+mp4_compress/*.zip

@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+var logFiles []string = []string{"ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"}
+
 func main() {
 	if len(os.Args) < 4 {
 		fmt.Printf("Usage: %s <input.mp4> <target_size_MB> <output.mp4>\n", os.Args[0])
@@ -64,6 +66,12 @@ func main() {
 	fmt.Println("Running pass 2...")
 	if err := pass2.Run(); err != nil {
 		log.Fatalf("Pass 2 failed: %v", err)
+	}
+
+	for _, logFile := range logFiles {
+		if _, err := os.Stat(logFile); err == nil {
+			os.Remove(logFile)
+		}
 	}
 
 	fmt.Printf("Compression complete: %s\n", output)
