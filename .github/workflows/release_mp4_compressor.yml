@@ -35,15 +35,20 @@ jobs:
 
       - name: Get package name
         id: get_package
-        shell: powershell
+        shell: pwsh
         run: |
-          $zipFile = Get-ChildItem -Recurse -Filter "mp4_compressor_*.zip" | Sort-Object LastWriteTime -Descending | Select -First 1
+          $zipFile = Get-ChildItem -Recurse -Filter "mp4_compressor_*.zip" |
+                     Sort-Object LastWriteTime -Descending |
+                     Select-Object -First 1
 
           if (-not $zipFile) {
             throw "No mp4_compressor_*.zip found!"
           }
 
-          echo "PACKAGE_PATH=$($zipFile.FullName)" >> $env:GITHUB_OUTPUT
+          $root = $env:GITHUB_WORKSPACE
+          $relative = $zipFile.FullName.Substring($root.Length + 1)
+
+          echo "PACKAGE_PATH=$relative" >> $env:GITHUB_OUTPUT
 
       - name: Extract version from tag
         id: get_version
