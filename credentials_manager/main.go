@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -42,8 +42,7 @@ type model struct {
 	viewState    viewState
 	width        int
 	height       int
-	statusMsg    string
-	statusErr    bool
+	exportOutput string
 }
 
 func initialModel() model {
@@ -58,7 +57,7 @@ func initialModel() model {
 		{
 			Name: "Database",
 			Configs: []CredentialConfig{
-				{Name: "dev", Credentials: map[string]Credential{"DB_HOST": {"localhost", true}, "DB_USER": {"dev", false}}},
+				{Name: "dev", Credentials: map[string]Credential{"DB_HOST": {"localhost", true}, "DB_USER": {"dev", true}}},
 				{Name: "test", Credentials: map[string]Credential{"DB_HOST": {"test.db.com", true}, "DB_USER": {"test", false}}},
 				{Name: "prod", Credentials: map[string]Credential{"DB_HOST": {"prod.db.com", true}, "DB_USER": {"prod", false}}},
 			},
@@ -136,20 +135,20 @@ func (m model) updateEntryDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		fail := setCredentialInSession(m.entries[m.cursor].Configs[m.configCursor].Credentials)
-		if fail {
-			m.statusMsg = "Failed to set credentials"
-			m.statusErr = true
-		} else {
-			m.statusMsg = "Credentials set!"
-			m.statusErr = false
-		}
+		exports := exportCredential(m.entries[m.cursor].Configs[m.configCursor].Credentials)
+		m.exportOutput = strings.Join(exports, "\n")
+		return m, tea.Quit
 	}
 
 	return m, nil
 }
 
 func (m model) View() string {
+	//print our commands
+	if m.exportOutput != "" {
+		return m.exportOutput
+	}
+
 	switch m.viewState {
 	case listView:
 		return m.renderListView()
@@ -220,25 +219,12 @@ func (m model) renderEntryDetailView() string {
 
 	for i, config := range entry.Configs {
 		cursor := " "
-		left := ""
-		right := ""
 		if m.configCursor == i {
 			cursor = ">"
-			left = selectedStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
-			if m.statusMsg != "" {
-				statusStyle := lipgloss.NewStyle()
-				if m.statusErr {
-					statusStyle = statusStyle.Foreground(lipgloss.Color("196"))
-				} else {
-					statusStyle = statusStyle.Foreground(lipgloss.Color("42"))
-				}
-				right = statusStyle.Render(m.statusMsg)
-			}
+			s += selectedStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
 		} else {
-			left = normalStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
+			s += normalStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
 		}
-
-		s += lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)
 
 		if m.configCursor == i {
 			for key, value := range config.Credentials {
@@ -255,19 +241,16 @@ func (m model) renderEntryDetailView() string {
 	return s
 }
 
-func setCredentialInSession(cred map[string]Credential) bool {
+func exportCredential(cred map[string]Credential) []string {
 	// log.Println(len(cred))
+	credCommands := make([]string, 0)
 	for key, value := range cred {
 		// log.Println(key, value)
-		cmdString := fmt.Sprintf("export %s=%s", key, value.Value)
+		cmdString := fmt.Sprintf("export %s=\"%s\"", key, value.Value)
 		// log.Println(cmdString)
-		cmd := exec.Command(cmdString)
-		err := cmd.Run()
-		if err != nil {
-			return true
-		}
+		credCommands = append(credCommands, cmdString)
 	}
-	return false
+	return credCommands
 }
 
 func main() {
