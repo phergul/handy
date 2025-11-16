@@ -30,7 +30,7 @@ if (-not $inputPath -or -not (Test-Path $inputPath)) {
 
 function Get-TargetSizeDialog {
     param(
-        [int]$Default = 50,
+        [int]$Default = 10,
         [string]$Title = "Compress Video",
         [string]$Prompt = "Enter target file size in MB:"
     )
@@ -74,7 +74,7 @@ function Get-TargetSizeDialog {
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return [int]$nud.Value } else { return $null }
 }
 
-$targetSize = Get-TargetSizeDialog -Default 50
+$targetSize = Get-TargetSizeDialog -Default 10
 
 if (-not $targetSize -or $targetSize -eq "0") {
     [System.Windows.Forms.MessageBox]::Show("No size entered. Cancelling.","Cancelled")

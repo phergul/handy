@@ -36,6 +36,8 @@ func main() {
 	}
 
 	totalBitrate := (targetSizeMB * 8192) / duration
+	//account for overhead
+	totalBitrate *= 0.97
 	audioBitrate := 128.0
 	videoBitrate := math.Max(totalBitrate-audioBitrate, 100.0)
 

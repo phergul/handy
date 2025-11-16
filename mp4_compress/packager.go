@@ -2,20 +2,36 @@ package main
 
 import (
 	"archive/zip"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
 
 var (
-	zipName = "mp4_compressor.zip"
+	zipName       = "mp4_compressor.zip"
+	buildEmbedded = flag.Bool("embedded", false, "Build single-binary embedded installer instead of zip")
 )
 
 func main() {
+	flag.Parse()
+
 	wd, _ := os.Getwd()
+
+	if err := buildCompressor(); err != nil {
+		log.Printf("Warning: Failed to build mp4_compress.exe: %v\n", err)
+	}
+
+	if *buildEmbedded {
+		if err := buildEmbeddedInstaller(); err != nil {
+			log.Fatalf("ERROR: Failed to build embedded installer: %v\n", err)
+		}
+		return
+	}
 
 	timestamp := time.Now().Format("20060102_150405")
 	zipName = fmt.Sprintf("mp4_compressor_%s.zip", timestamp)
@@ -40,14 +56,17 @@ func main() {
 
 A simple right-click video compression tool for Windows.
 
-## Installation
 
-1. Right-click install.ps1 and select "Run with PowerShell"
-2. Accept the prompt for admin privileges
-3. The installer will:
-   - Install ffmpeg (if needed)
-   - Set up the compression tool
-   - Add right-click context menu for .mp4 files
+**Two installation options:**
+
+### Option 1: Single-Binary Installer (Recommended)
+Download ` + "`mp4_compress_installer.exe`" + `and run it. It will:
+- Check for and install ffmpeg if needed
+- Install the compressor
+- Register the right-click context menu
+
+### Option 2: ZIP Install
+Download the zip file, extract it, and run ` + "`install.ps1`" + `with PowerShell.
 
 ## Usage
 
@@ -126,4 +145,67 @@ func addDirToZip(zipWriter *zip.Writer, dirPath, zipPrefix string) error {
 		zipPath := filepath.Join(zipPrefix, relPath)
 		return addFileToZip(zipWriter, path, zipPath)
 	})
+}
+
+func buildCompressor() error {
+	compressorSource := filepath.Join("internal", "mp4_compress.go")
+	compressorBinary := filepath.Join("internal", "mp4_compress.exe")
+
+	if _, err := os.Stat(compressorSource); os.IsNotExist(err) {
+		return fmt.Errorf("source file not found: %s", compressorSource)
+	}
+
+	fmt.Print("Building mp4_compress.exe...")
+	cmd := exec.Command("go", "build", "-o", compressorBinary, compressorSource)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Println(" FAILED")
+		fmt.Println(string(output))
+		return err
+	}
+	fmt.Println(" DONE")
+	return nil
+}
+
+func buildEmbeddedInstaller() error {
+	fmt.Println("Building single-binary embedded installer...")
+
+	if _, err := os.Stat("go.mod"); os.IsNotExist(err) {
+		fmt.Print("Initializing Go module...")
+		cmd := exec.Command("go", "mod", "init", "mp4_compress_installer")
+		if err := cmd.Run(); err != nil {
+			fmt.Println(" FAILED")
+			return err
+		}
+		fmt.Println(" DONE")
+	}
+
+	fmt.Print("Downloading dependencies...")
+	cmd := exec.Command("go", "mod", "tidy")
+	if err := cmd.Run(); err != nil {
+		fmt.Println(" FAILED")
+		return err
+	}
+	fmt.Println(" DONE")
+
+	fmt.Print("Building installer...")
+	cmd = exec.Command("go", "build", "-o", "mp4_compress_installer.exe", "installer.go")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Println(" FAILED")
+		fmt.Println(string(output))
+		return err
+	}
+	fmt.Println(" DONE")
+
+	if _, err := os.Stat("mp4_compress_installer.exe"); err == nil {
+		fmt.Println()
+		fmt.Println("Success! Installer created: mp4_compress_installer.exe")
+		fmt.Println()
+		fmt.Println("Run mp4_compress_installer.exe to install the video compressor.")
+	} else {
+		return fmt.Errorf("installer binary not found after build")
+	}
+
+	return nil
 }

@@ -31,9 +31,13 @@ jobs:
         working-directory: mp4_compress
         run: go build -o packager.exe packager.go
 
-      - name: Create package
+      - name: Create ZIP package
         working-directory: mp4_compress
         run: .\packager.exe
+
+      - name: Build embedded installer
+        working-directory: mp4_compress
+        run: .\packager.exe -embedded
 
       - name: Locate and move ZIP
         id: zip
@@ -52,6 +56,21 @@ jobs:
 
           echo "ZIP_PATH=$($zipFile.Name)" >> $env:GITHUB_OUTPUT
 
+      - name: Move installer exe
+        id: installer
+        shell: pwsh
+        run: |
+          $installerFile = "mp4_compress\mp4_compress_installer.exe"
+          
+          if (-not (Test-Path $installerFile)) {
+            throw "Installer exe not found!"
+          }
+
+          $dest = Join-Path $env:GITHUB_WORKSPACE "mp4_compress_installer.exe"
+          Copy-Item $installerFile $dest -Force
+
+          echo "INSTALLER_PATH=mp4_compress_installer.exe" >> $env:GITHUB_OUTPUT
+
       - name: Extract version from tag
         id: version
         shell: pwsh
@@ -62,15 +81,15 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ steps.zip.outputs.ZIP_PATH }}
+          files: |
+            ${{ steps.zip.outputs.ZIP_PATH }}
+            ${{ steps.installer.outputs.INSTALLER_PATH }}
           name: MP4 Compressor v${{ steps.version.outputs.VERSION }}
           draft: false
           prerelease: false
           # generate_release_notes: true
           body: |
             ## MP4 Video Compressor - Windows Installation
-
-            Download the zip file, extract it, and run `install.ps1` with PowerShell.
 
             See README.txt inside the package for full installation instructions.
         env:
