@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,7 +12,12 @@ import (
 
 type CredentialConfig struct {
 	Name        string
-	Credentials map[string]string
+	Credentials map[string]Credential
+}
+
+type Credential struct {
+	Value string
+	Show  bool
 }
 
 type Entry struct {
@@ -41,16 +47,16 @@ func initialModel() model {
 		{
 			Name: "AWS Account",
 			Configs: []CredentialConfig{
-				{Name: "dev", Credentials: map[string]string{"AWS_ACCESS_KEY": "dev-key-123", "AWS_SECRET": "dev-secret"}},
-				{Name: "prod", Credentials: map[string]string{"AWS_ACCESS_KEY": "prod-key-456", "AWS_SECRET": "prod-secret"}},
+				{Name: "dev", Credentials: map[string]Credential{"AWS_ACCESS_KEY": {"dev-key-123", true}, "AWS_SECRET": {"dev-secret", false}}},
+				{Name: "prod", Credentials: map[string]Credential{"AWS_ACCESS_KEY": {"prod-key-456", true}, "AWS_SECRET": {"prod-secret", false}}},
 			},
 		},
 		{
 			Name: "Database",
 			Configs: []CredentialConfig{
-				{Name: "dev", Credentials: map[string]string{"DB_HOST": "localhost", "DB_USER": "dev"}},
-				{Name: "test", Credentials: map[string]string{"DB_HOST": "test.db.com", "DB_USER": "test"}},
-				{Name: "prod", Credentials: map[string]string{"DB_HOST": "prod.db.com", "DB_USER": "prod"}},
+				{Name: "dev", Credentials: map[string]Credential{"DB_HOST": {"localhost", true}, "DB_USER": {"dev", false}}},
+				{Name: "test", Credentials: map[string]Credential{"DB_HOST": {"test.db.com", true}, "DB_USER": {"test", false}}},
+				{Name: "prod", Credentials: map[string]Credential{"DB_HOST": {"prod.db.com", true}, "DB_USER": {"prod", false}}},
 			},
 		},
 	}
@@ -99,7 +105,7 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 
-	case "enter":
+	case "enter", "l":
 		m.viewState = entryDetailView
 		m.configCursor = 0
 	}
@@ -112,7 +118,7 @@ func (m model) updateEntryDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
-	case "esc":
+	case "esc", "h":
 		m.viewState = listView
 
 	case "up", "k":
@@ -125,10 +131,11 @@ func (m model) updateEntryDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.configCursor++
 		}
 
-	case "enter", "c":
+	case "enter":
 		// Copy selected config to clipboard (placeholder)
 		// You'd use a clipboard library here
 		// For now, just show which would be copied
+		setCredentialInSession(m.entries[m.cursor].Configs[m.configCursor].Credentials)
 	}
 
 	return m, nil
@@ -172,7 +179,7 @@ func (m model) renderListView() string {
 		s += "\n"
 	}
 
-	s += "\n\n" + lipgloss.NewStyle().Faint(true).Render("↑/↓ or j/k: navigate • enter: select • q: quit")
+	s += "\n\n" + lipgloss.NewStyle().Faint(true).Render("↑/↓ or j/k: navigate • enter/l: select • q: quit")
 
 	return s
 }
@@ -211,18 +218,31 @@ func (m model) renderEntryDetailView() string {
 		} else {
 			s += normalStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
 		}
-		s += "\n"
 
 		if m.configCursor == i {
 			for key, value := range config.Credentials {
-				s += credStyle.Render(fmt.Sprintf("  %s: %s", key, value)) + "\n"
+				if value.Show {
+					s += credStyle.Render(fmt.Sprintf("  %s: %s", key, value.Value))
+				}
 			}
 		}
+		s += "\n"
 	}
 
 	s += "\n\n" + lipgloss.NewStyle().Faint(true).Render("↑/↓ or j/k: navigate • enter: copy • esc: back • q: quit")
 
 	return s
+}
+
+func setCredentialInSession(cred map[string]Credential) error {
+	for key, value := range cred {
+		cmd := exec.Command(fmt.Sprintf("export %s=%s", key, value.Value))
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("failed to set credential")
+		}
+	}
+	return nil
 }
 
 func main() {
