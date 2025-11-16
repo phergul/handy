@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// data models
 type CredentialConfig struct {
 	Name        string
 	Credentials map[string]Credential
@@ -25,6 +26,7 @@ type Entry struct {
 	Configs []CredentialConfig
 }
 
+// bubbletea
 type viewState int
 
 const (
@@ -40,6 +42,8 @@ type model struct {
 	viewState    viewState
 	width        int
 	height       int
+	statusMsg    string
+	statusErr    bool
 }
 
 func initialModel() model {
@@ -132,10 +136,14 @@ func (m model) updateEntryDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		// Copy selected config to clipboard (placeholder)
-		// You'd use a clipboard library here
-		// For now, just show which would be copied
-		setCredentialInSession(m.entries[m.cursor].Configs[m.configCursor].Credentials)
+		fail := setCredentialInSession(m.entries[m.cursor].Configs[m.configCursor].Credentials)
+		if fail {
+			m.statusMsg = "Failed to set credentials"
+			m.statusErr = true
+		} else {
+			m.statusMsg = "Credentials set!"
+			m.statusErr = false
+		}
 	}
 
 	return m, nil
@@ -212,17 +220,30 @@ func (m model) renderEntryDetailView() string {
 
 	for i, config := range entry.Configs {
 		cursor := " "
+		left := ""
+		right := ""
 		if m.configCursor == i {
 			cursor = ">"
-			s += selectedStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
+			left = selectedStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
+			if m.statusMsg != "" {
+				statusStyle := lipgloss.NewStyle()
+				if m.statusErr {
+					statusStyle = statusStyle.Foreground(lipgloss.Color("196"))
+				} else {
+					statusStyle = statusStyle.Foreground(lipgloss.Color("42"))
+				}
+				right = statusStyle.Render(m.statusMsg)
+			}
 		} else {
-			s += normalStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
+			left = normalStyle.Render(fmt.Sprintf("%s %s", cursor, config.Name))
 		}
+
+		s += lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)
 
 		if m.configCursor == i {
 			for key, value := range config.Credentials {
 				if value.Show {
-					s += credStyle.Render(fmt.Sprintf("  %s: %s", key, value.Value))
+					s += "\n" + credStyle.Render(fmt.Sprintf("  %s: %s", key, value.Value))
 				}
 			}
 		}
@@ -234,15 +255,19 @@ func (m model) renderEntryDetailView() string {
 	return s
 }
 
-func setCredentialInSession(cred map[string]Credential) error {
+func setCredentialInSession(cred map[string]Credential) bool {
+	// log.Println(len(cred))
 	for key, value := range cred {
-		cmd := exec.Command(fmt.Sprintf("export %s=%s", key, value.Value))
+		// log.Println(key, value)
+		cmdString := fmt.Sprintf("export %s=%s", key, value.Value)
+		// log.Println(cmdString)
+		cmd := exec.Command(cmdString)
 		err := cmd.Run()
 		if err != nil {
-			return fmt.Errorf("failed to set credential")
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 func main() {
