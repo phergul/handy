@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -13,13 +14,13 @@ const (
 	GhosttyConfigDir = ""
 	ZellijConfigDir  = ""
 
-	Blue       = "27"
-	Turquiose  = "30"
-	Green      = "49"
-	RoyalBlue  = "63"
-	Aquamarine = "79"
-	Pink       = "169"
-	Grey       = "240"
+	Blue    = "#9AC2C9"
+	Pink    = "#FED4E7"
+	Orange  = "#E26D5C"
+	Teal    = "#006C67"
+	Celadon = "#B9D8C2"
+	Purple  = "#745C97"
+	Indigo  = "#39375B"
 )
 
 // order (nvim, zellij, ghostty)
@@ -50,6 +51,8 @@ type model struct {
 	viewState     ViewState
 	width, height int
 	entries       []Entry
+	inputs        []textinput.Model
+	focusedInput  int
 }
 
 func (m model) Init() tea.Cmd {
@@ -91,6 +94,9 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter", "l":
+		// TODO
+
+	case "a":
 		m.viewState = addEntry
 	}
 
@@ -98,31 +104,52 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateAddEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd = make([]tea.Cmd, len(m.inputs))
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
 	case "enter", "l":
 		// TODO
+
+	case "tab":
+		m.focusedInput = (m.focusedInput + 1) % len(m.inputs)
+
+	case "shift+tab":
+		m.focusedInput--
+		if m.focusedInput < 0 {
+			m.focusedInput = len(m.inputs) - 1
+		}
 	}
 
-	return m, nil
+	for i := range m.inputs {
+		m.inputs[i].Blur()
+	}
+	m.inputs[m.focusedInput].Focus()
+
+	for i := range m.inputs {
+		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m model) View() string {
 	switch m.viewState {
 	case listView:
 		return m.renderListView()
+	case addEntry:
+		return m.renderAddEntry()
 	default:
 		return "Unknown view"
 	}
 }
 
 func (m model) renderListView() string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Aquamarine)).Padding(1, 0)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Celadon)).Padding(1, 0)
 	normalStyle := lipgloss.NewStyle().PaddingLeft(2)
-	selectedStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(Turquiose))
-	themeStyle := lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color(Grey))
+	selectedStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(Purple))
+	themeStyle := lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color(Indigo))
 
 	t := titleStyle.Render("Theme Switcher:") + "\n"
 
@@ -150,6 +177,23 @@ func (m model) renderListView() string {
 	return t
 }
 
+func (m model) renderAddEntry() string {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Celadon)).Padding(1, 0)
+	inputStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Border(lipgloss.RoundedBorder())
+
+	t := titleStyle.Render("Add Theme Entry:") + "\n"
+
+	t += inputStyle.Render(fmt.Sprintf(`Entry Name: %s
+
+Neovim Theme: %s
+
+Zellij Theme: %s
+
+Ghostty Theme: %s`, m.inputs[0].View(), m.inputs[1].View(), m.inputs[2].View(), m.inputs[3].View()))
+
+	return t
+}
+
 func formatThemes(themes ThemeList) string {
 	structString := fmt.Sprintf("%+v", themes)
 
@@ -170,8 +214,27 @@ func initialModel() model {
 		{Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
 	}
 
+	var inputs []textinput.Model = make([]textinput.Model, 3)
+	inputs[0] = textinput.New()
+	inputs[0].Width = 25
+	inputs[0].Prompt = ""
+	inputs[0].Focus()
+
+	inputs[1] = textinput.New()
+	inputs[1].Width = 25
+	inputs[1].Prompt = ""
+
+	inputs[2] = textinput.New()
+	inputs[2].Width = 25
+	inputs[2].Prompt = ""
+
+	inputs[3] = textinput.New()
+	inputs[3].Width = 25
+	inputs[3].Prompt = ""
+
 	return model{
 		entries: e,
+		inputs:  inputs,
 	}
 }
 
