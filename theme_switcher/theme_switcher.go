@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -12,12 +13,13 @@ const (
 	GhosttyConfigDir = ""
 	ZellijConfigDir  = ""
 
-	Blue      = "27"
-	Turquiose = "30"
-	Green     = "49"
-	RoyalBlue = "63"
-	Pink      = "169"
-	Grey      = "240"
+	Blue       = "27"
+	Turquiose  = "30"
+	Green      = "49"
+	RoyalBlue  = "63"
+	Aquamarine = "79"
+	Pink       = "169"
+	Grey       = "240"
 )
 
 // order (nvim, zellij, ghostty)
@@ -25,15 +27,22 @@ type Programs []string
 
 var programs = Programs{"nvim", "zellij", "ghostty"}
 
+type ThemeList struct {
+	Nvim    string `json:"nvim"`
+	Zellij  string `json:"zellij"`
+	Ghostty string `json:"ghostty"`
+}
+
 type Entry struct {
 	Name   string
-	Themes []string
+	Themes ThemeList
 }
 
 type ViewState int
 
 const (
 	listView ViewState = iota
+	addEntry
 )
 
 type model struct {
@@ -58,6 +67,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.viewState {
 		case listView:
 			return m.updateListView(msg)
+		case addEntry:
+			return m.updateAddEntry(msg)
 		}
 	}
 
@@ -80,6 +91,18 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter", "l":
+		m.viewState = addEntry
+	}
+
+	return m, nil
+}
+
+func (m model) updateAddEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+
+	case "enter", "l":
 		// TODO
 	}
 
@@ -96,22 +119,25 @@ func (m model) View() string {
 }
 
 func (m model) renderListView() string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Blue)).Padding(1, 0)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Aquamarine)).Padding(1, 0)
 	normalStyle := lipgloss.NewStyle().PaddingLeft(2)
-	selectedStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(RoyalBlue))
+	selectedStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(Turquiose))
 	themeStyle := lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color(Grey))
 
-	t := titleStyle.Render("Theme Switcher - Available:") + "\n\n"
+	t := titleStyle.Render("Theme Switcher:") + "\n"
 
 	for i, entry := range m.entries {
 		cursor := " "
 		if m.cursor == i {
-			cursor = ">"
+			cursor = "+"
 			t += selectedStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
 
-			for i, theme := range entry.Themes {
-				t += "\n" + themeStyle.Render(fmt.Sprintf("  %s: %s", programs[i], theme))
-			}
+			t += "\n" + themeStyle.Render(fmt.Sprintf("  %s", formatThemes(entry.Themes)))
+			// theme := reflect.TypeOf(entry.Themes)
+			// for i := 0; i < theme.NumField(); i++ {
+			// 	field := theme.Field(i)
+			// 	t += "\n" + themeStyle.Render(fmt.Sprintf("  %s: %s", field.Name, entry.Themes.Nvim))
+			// }
 		} else {
 			t += normalStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
 		}
@@ -124,12 +150,24 @@ func (m model) renderListView() string {
 	return t
 }
 
+func formatThemes(themes ThemeList) string {
+	structString := fmt.Sprintf("%+v", themes)
+
+	structString = strings.Replace(structString, "{", "", 1)
+	structString = strings.Replace(structString, "}", "", 1)
+
+	structString = strings.Replace(structString, " ", "\n  ", 2)
+	structString = strings.Replace(structString, ":", ": ", 3)
+
+	return structString
+}
+
 func initialModel() model {
 	//test
 	e := []Entry{
-		{Name: "blue", Themes: []string{"tokyonight", "nord", "Argonaut"}},
-		{Name: "green", Themes: []string{"tokyonight", "nord", "Argonaut"}},
-		{Name: "red", Themes: []string{"tokyonight", "nord", "Argonaut"}},
+		{Name: "blue", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
+		{Name: "green", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
+		{Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
 	}
 
 	return model{
