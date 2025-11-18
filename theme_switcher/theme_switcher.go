@@ -17,10 +17,17 @@ const (
 	Green     = "49"
 	RoyalBlue = "63"
 	Pink      = "169"
+	Grey      = "240"
 )
 
+// order (nvim, zellij, ghostty)
+type Programs []string
+
+var programs = Programs{"nvim", "zellij", "ghostty"}
+
 type Entry struct {
-	Name string
+	Name   string
+	Themes []string
 }
 
 type ViewState int
@@ -92,6 +99,7 @@ func (m model) renderListView() string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Blue)).Padding(1, 0)
 	normalStyle := lipgloss.NewStyle().PaddingLeft(2)
 	selectedStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(RoyalBlue))
+	themeStyle := lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color(Grey))
 
 	t := titleStyle.Render("Theme Switcher - Available:") + "\n\n"
 
@@ -100,6 +108,10 @@ func (m model) renderListView() string {
 		if m.cursor == i {
 			cursor = ">"
 			t += selectedStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
+
+			for i, theme := range entry.Themes {
+				t += "\n" + themeStyle.Render(fmt.Sprintf("  %s: %s", programs[i], theme))
+			}
 		} else {
 			t += normalStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
 		}
@@ -113,10 +125,11 @@ func (m model) renderListView() string {
 }
 
 func initialModel() model {
+	//test
 	e := []Entry{
-		{Name: "blue"},
-		{Name: "green"},
-		{Name: "red"},
+		{Name: "blue", Themes: []string{"tokyonight", "nord", "Argonaut"}},
+		{Name: "green", Themes: []string{"tokyonight", "nord", "Argonaut"}},
+		{Name: "red", Themes: []string{"tokyonight", "nord", "Argonaut"}},
 	}
 
 	return model{
