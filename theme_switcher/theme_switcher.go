@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -12,7 +14,7 @@ import (
 )
 
 const (
-	StorageFile = "./config/theme_switcher/theme_entries.json"
+	StorageFile = ".config/theme_switcher/theme_entries.json"
 
 	GhosttyConfigDir = ""
 	ZellijConfigDir  = ""
@@ -110,6 +112,12 @@ func (m model) updateAddEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		m.saveEntry()
+		m.viewState = listView
+
+	case "esc":
+		for i := 0; i < len(m.inputs); i++ {
+			m.inputs[i].Reset()
+		}
 		m.viewState = listView
 
 	case "tab":
@@ -217,17 +225,93 @@ func formatThemes(themes ThemeList) string {
 	return structString
 }
 
-func (m model) saveEntry() error {
+func (m *model) saveEntry() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home dir: %w", err)
+	}
+	entriesFile := filepath.Join(homeDir, StorageFile)
+
+	dir := filepath.Dir(entriesFile)
+	if err = os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create dir: %w", err)
+	}
+
+	var existingEntries []Entry
+
+	if _, err := os.Stat(entriesFile); err == nil {
+		data, err := os.ReadFile(entriesFile)
+		if err != nil {
+			return fmt.Errorf("failed to read entries file: %w", err)
+		}
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &existingEntries); err != nil {
+				return fmt.Errorf("failed to parse entries file: %w", err)
+			}
+		}
+	}
+
+	newEntry := Entry{
+		Name: m.inputs[0].Value(),
+		Themes: ThemeList{
+			Nvim:    m.inputs[1].Value(),
+			Zellij:  m.inputs[2].Value(),
+			Ghostty: m.inputs[3].Value(),
+		},
+	}
+
+	existingEntries = append(existingEntries, newEntry)
+
+	data, err := json.MarshalIndent(existingEntries, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal entries: %w", err)
+	}
+
+	if err := os.WriteFile(entriesFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write entries file: %w", err)
+	}
+
+	m.entries = existingEntries
+
+	for i := range m.inputs {
+		m.inputs[i].Reset()
+	}
+
 	return nil
+}
+
+func loadEntries() []Entry {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("failed to get user home dir: %v", err)
+	}
+	entriesFile := filepath.Join(homeDir, StorageFile)
+
+	var entries []Entry
+	data, err := os.ReadFile(entriesFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return entries
+		}
+		log.Fatalf("failed to read entries file: %v", err)
+	}
+
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &entries); err != nil {
+			log.Fatalf("failed to unmarshal entries: %v", err)
+		}
+	}
+
+	return entries
 }
 
 func initialModel() model {
 	//test
-	e := []Entry{
-		{Name: "blue", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-		{Name: "green", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-		{Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-	}
+	// e := []Entry{
+	// {Name: "blue", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
+	// {Name: "green", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
+	// {Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
+	// }
 
 	var inputs []textinput.Model = make([]textinput.Model, 4)
 	inputs[0] = textinput.New()
@@ -236,19 +320,19 @@ func initialModel() model {
 	inputs[0].Focus()
 
 	inputs[1] = textinput.New()
-	inputs[1].Width = 25
 	inputs[1].Prompt = ""
+	inputs[1].Width = 25
 
 	inputs[2] = textinput.New()
-	inputs[2].Width = 25
 	inputs[2].Prompt = ""
+	inputs[2].Width = 25
 
 	inputs[3] = textinput.New()
-	inputs[3].Width = 25
 	inputs[3].Prompt = ""
+	inputs[3].Width = 25
 
 	return model{
-		entries: e,
+		entries: loadEntries(),
 		inputs:  inputs,
 	}
 }
