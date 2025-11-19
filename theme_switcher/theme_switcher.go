@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -11,6 +12,8 @@ import (
 )
 
 const (
+	StorageFile = "./config/theme_switcher/theme_entries.json"
+
 	GhosttyConfigDir = ""
 	ZellijConfigDir  = ""
 
@@ -23,11 +26,6 @@ const (
 	Indigo  = "#39375B"
 )
 
-// order (nvim, zellij, ghostty)
-type Programs []string
-
-var programs = Programs{"nvim", "zellij", "ghostty"}
-
 type ThemeList struct {
 	Nvim    string `json:"nvim"`
 	Zellij  string `json:"zellij"`
@@ -35,8 +33,8 @@ type ThemeList struct {
 }
 
 type Entry struct {
-	Name   string
-	Themes ThemeList
+	Name   string    `json:"name"`
+	Themes ThemeList `json:"theme_list"`
 }
 
 type ViewState int
@@ -93,7 +91,7 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 
-	case "enter", "l":
+	case "enter":
 		// TODO
 
 	case "a":
@@ -110,8 +108,9 @@ func (m model) updateAddEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
-	case "enter", "l":
-		// TODO
+	case "enter":
+		m.saveEntry()
+		m.viewState = listView
 
 	case "tab":
 		m.focusedInput = (m.focusedInput + 1) % len(m.inputs)
@@ -172,24 +171,36 @@ func (m model) renderListView() string {
 		t += "\n"
 	}
 
-	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("↑/↓ or j/k: navigate • enter/l: select • q: quit")
+	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("j/k: navigate • enter: select • a: add entry • q: quit")
 
 	return t
 }
 
 func (m model) renderAddEntry() string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(Celadon)).Padding(1, 0)
-	inputStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Border(lipgloss.RoundedBorder())
+	borderStyle := lipgloss.NewStyle().Bold(true).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(Teal))
+	inputTitleStyle := lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(lipgloss.Color(Purple))
+	inputTextStyle := lipgloss.NewStyle()
 
 	t := titleStyle.Render("Add Theme Entry:") + "\n"
 
-	t += inputStyle.Render(fmt.Sprintf(`Entry Name: %s
+	formLines := []string{
+		inputTitleStyle.Render(" Entry Name: ") + inputTextStyle.Render(m.inputs[0].View()) + "\n",
+		inputTitleStyle.Render("Neovim Theme: ") + inputTextStyle.Render(m.inputs[1].View()) + "\n",
+		inputTitleStyle.Render("Zellij Theme: ") + inputTextStyle.Render(m.inputs[2].View()) + "\n",
+		inputTitleStyle.Render("Ghostty Theme: ") + inputTextStyle.Render(m.inputs[3].View()),
+	}
 
-Neovim Theme: %s
+	t += borderStyle.Render(formLines...)
+	// 	t += inputTitleStyle.Render(fmt.Sprintf(`Entry Name: %s
+	//
+	// Neovim Theme: %s
+	//
+	// Zellij Theme: %s
+	//
+	// Ghostty Theme: %s`, m.inputs[0].View(), m.inputs[1].View(), m.inputs[2].View(), m.inputs[3].View()))
 
-Zellij Theme: %s
-
-Ghostty Theme: %s`, m.inputs[0].View(), m.inputs[1].View(), m.inputs[2].View(), m.inputs[3].View()))
+	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("tab/shift-tab: navigate • enter: select • q: quit")
 
 	return t
 }
@@ -206,6 +217,10 @@ func formatThemes(themes ThemeList) string {
 	return structString
 }
 
+func (m model) saveEntry() error {
+	return nil
+}
+
 func initialModel() model {
 	//test
 	e := []Entry{
@@ -214,7 +229,7 @@ func initialModel() model {
 		{Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
 	}
 
-	var inputs []textinput.Model = make([]textinput.Model, 3)
+	var inputs []textinput.Model = make([]textinput.Model, 4)
 	inputs[0] = textinput.New()
 	inputs[0].Width = 25
 	inputs[0].Prompt = ""
