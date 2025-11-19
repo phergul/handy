@@ -5,3 +5,5 @@ mp4_compress/packager.exe
 mp4_compress/*.zip
 mp4_compress/go.mod
 mp4_compress/go.sum
+
+*.log

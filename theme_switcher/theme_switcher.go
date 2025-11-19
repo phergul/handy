@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -17,7 +18,7 @@ const (
 	StorageFile = ".config/theme_switcher/theme_entries.json"
 
 	GhosttyConfigDir = ""
-	ZellijConfigDir  = ""
+	ZellijConfigFile = ".config/zellij/config.kdl"
 
 	Blue    = "#9AC2C9"
 	Pink    = "#FED4E7"
@@ -94,7 +95,7 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		// TODO
+		applyThemes(m.entries[m.cursor])
 
 	case "a":
 		m.viewState = addEntry
@@ -167,11 +168,6 @@ func (m model) renderListView() string {
 			t += selectedStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
 
 			t += "\n" + themeStyle.Render(fmt.Sprintf("  %s", formatThemes(entry.Themes)))
-			// theme := reflect.TypeOf(entry.Themes)
-			// for i := 0; i < theme.NumField(); i++ {
-			// 	field := theme.Field(i)
-			// 	t += "\n" + themeStyle.Render(fmt.Sprintf("  %s: %s", field.Name, entry.Themes.Nvim))
-			// }
 		} else {
 			t += normalStyle.Render(fmt.Sprintf("%s %s", cursor, entry.Name))
 		}
@@ -200,13 +196,6 @@ func (m model) renderAddEntry() string {
 	}
 
 	t += borderStyle.Render(formLines...)
-	// 	t += inputTitleStyle.Render(fmt.Sprintf(`Entry Name: %s
-	//
-	// Neovim Theme: %s
-	//
-	// Zellij Theme: %s
-	//
-	// Ghostty Theme: %s`, m.inputs[0].View(), m.inputs[1].View(), m.inputs[2].View(), m.inputs[3].View()))
 
 	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("tab/shift-tab: navigate • enter: select • q: quit")
 
@@ -305,6 +294,43 @@ func loadEntries() []Entry {
 	return entries
 }
 
+func applyThemes(entry Entry) []error {
+	var errs []error
+
+	errs = append(errs, applyNvim(entry.Themes.Nvim))
+	errs = append(errs, applyZellij(entry.Themes.Zellij))
+
+	return errs
+}
+
+func applyNvim(theme string) error {
+
+	return nil
+}
+
+func applyZellij(theme string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("[Zellij] failed to get user home dir: %w", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(homeDir, ZellijConfigFile))
+	if err != nil {
+		return fmt.Errorf("[Zellij] failed to read zellij config file: %w", err)
+	}
+
+	re := regexp.MustCompile(`^\s*theme\s+"([^"]+)"`)
+	matches := re.MatchString(string(data))
+	log.Println(matches)
+	content := re.ReplaceAllString(string(data),
+		fmt.Sprintf("theme \"%s\"", theme),
+	)
+
+	log.Println(content)
+
+	return nil
+}
+
 func initialModel() model {
 	//test
 	// e := []Entry{
@@ -338,6 +364,18 @@ func initialModel() model {
 }
 
 func main() {
+	os.Remove("app.log")
+	logFile, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+
+	log.SetOutput(logFile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	log.Println("Application started")
+
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error: %v", err)
