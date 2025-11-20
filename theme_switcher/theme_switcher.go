@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,8 +20,8 @@ const (
 	StorageDir  = ".config/theme_switcher"
 	StorageFile = ".config/theme_switcher/theme_entries.json"
 
-	GhosttyConfigDir = ""
-	ZellijConfigFile = ".config/zellij/config.kdl"
+	GhosttyConfigFile = "Library/Application\\ Support/com.mitchellh.ghostty/config"
+	ZellijConfigFile  = ".config/zellij/config.kdl"
 
 	Blue    = "#9AC2C9"
 	Pink    = "#FED4E7"
@@ -98,6 +99,7 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		errs := applyThemes(m.entries[m.cursor])
+		// TODO: show the errors in the model view
 		for _, err := range errs {
 			if err != nil {
 				log.Println(err)
@@ -106,6 +108,9 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "a":
 		m.viewState = addEntry
+
+	case "d":
+		// TODO: add entry delete function
 	}
 
 	return m, nil
@@ -306,6 +311,7 @@ func applyThemes(entry Entry) []error {
 
 	errs = append(errs, applyNvim(entry.Themes.Nvim))
 	errs = append(errs, applyZellij(entry.Themes.Zellij))
+	errs = append(errs, applyGhostty(entry.Themes.Ghostty))
 
 	return errs
 }
@@ -323,8 +329,8 @@ func applyNvim(theme string) error {
 	themeFile := filepath.Join(homeDir, ".config/nvim/theme.conf")
 
 	themeParts := strings.Split(theme, ",")
-	colourschemeID := themeParts[0]
-	themeName := themeParts[1]
+	colourschemeID := strings.TrimSpace(themeParts[0])
+	themeName := strings.TrimSpace(themeParts[1])
 
 	if colourschemeID == "" {
 		colourschemeID = "nil"
@@ -337,6 +343,11 @@ func applyNvim(theme string) error {
 		return fmt.Errorf("[Nvim] failed to write to 'theme.conf': %w", err)
 	}
 
+	// neovim-remote is required
+	/*
+		TODO: add another way to communicate with neovim that requires no dependancies?
+		make this the fallback eventually
+	*/
 	cmd := exec.Command("nvr", "--remote-send", ":ReloadTheme<CR>")
 	cmd.Run() //ignore error if nvim isn’t running
 
@@ -357,7 +368,7 @@ func applyZellij(theme string) error {
 
 	content := string(data)
 
-	replacement := fmt.Sprintf(`theme "%s"`, theme)
+	replacement := fmt.Sprintf("theme \"%s\"", theme)
 	themeRe := regexp.MustCompile(`(?m)^\s*theme\s+"[^"]+"\s*$`)
 
 	if themeRe.MatchString(content) {
@@ -372,6 +383,32 @@ func applyZellij(theme string) error {
 	}
 
 	return nil
+}
+
+func applyGhostty(theme string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("[Ghostty] failed to get user home dir: %w", err)
+	}
+
+	configPath := filepath.Join(homeDir, GhosttyConfigFile)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("[Ghostty] failed to read ghostty config file: %w", err)
+	}
+
+	content := string(data)
+
+	replacement := fmt.Sprintf("theme = %s", theme)
+	themeRe := regexp.MustCompile(`(?m)^\s*theme\s*=\s*\S+`)
+
+	if themeRe.MatchString(content) {
+		content = themeRe.ReplaceAllString(content, replacement)
+	} else {
+		content = replacement + "\n" + content
+	}
+
+	return os.WriteFile(configPath, []byte(content), 0644)
 }
 
 func initialModel() model {
@@ -404,6 +441,10 @@ func initialModel() model {
 }
 
 func main() {
+	if runtime.GOOS != "darwin" {
+		log.Fatalf("only available on macOS")
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("failed to get home dir: %v", err)
