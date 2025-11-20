@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/go-cmp/cmp"
 )
 
 const (
@@ -30,6 +31,11 @@ const (
 	Celadon = "#B9D8C2"
 	Purple  = "#745C97"
 	Indigo  = "#39375B"
+)
+
+var (
+	homeDir     = os.Getenv("HOME")
+	entriesFile = filepath.Join(homeDir, StorageFile)
 )
 
 type ThemeList struct {
@@ -110,7 +116,17 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = addEntry
 
 	case "d":
-		// TODO: add entry delete function
+		if err := deleteEntry(m.entries[m.cursor]); err != nil {
+			// TODO: show error in model view
+			log.Println(err)
+		}
+		m.entries = loadEntries()
+		if m.cursor > 0 {
+			m.cursor--
+		}
+
+	case "e":
+		// TODO: add entry edit function
 	}
 
 	return m, nil
@@ -187,7 +203,7 @@ func (m model) renderListView() string {
 		t += "\n"
 	}
 
-	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("j/k: navigate • enter: select • a: add entry • q: quit")
+	t += "\n\n" + lipgloss.NewStyle().Faint(true).Render("j/k: navigate • enter: select • a: add entry • d: delete entry • q: quit")
 
 	return t
 }
@@ -227,14 +243,8 @@ func formatThemes(themes ThemeList) string {
 }
 
 func (m *model) saveEntry() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get user home dir: %w", err)
-	}
-	entriesFile := filepath.Join(homeDir, StorageFile)
-
 	dir := filepath.Dir(entriesFile)
-	if err = os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create dir: %w", err)
 	}
 
@@ -263,13 +273,8 @@ func (m *model) saveEntry() error {
 
 	existingEntries = append(existingEntries, newEntry)
 
-	data, err := json.MarshalIndent(existingEntries, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal entries: %w", err)
-	}
-
-	if err := os.WriteFile(entriesFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write entries file: %w", err)
+	if err := saveEntriesToFile(existingEntries); err != nil {
+		return err
 	}
 
 	m.entries = existingEntries
@@ -281,13 +286,20 @@ func (m *model) saveEntry() error {
 	return nil
 }
 
-func loadEntries() []Entry {
-	homeDir, err := os.UserHomeDir()
+func saveEntriesToFile(entries []Entry) error {
+	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
-		log.Fatalf("failed to get user home dir: %v", err)
+		return fmt.Errorf("failed to marshal entries: %w", err)
 	}
-	entriesFile := filepath.Join(homeDir, StorageFile)
 
+	if err := os.WriteFile(entriesFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write entries file: %w", err)
+	}
+
+	return nil
+}
+
+func loadEntries() []Entry {
 	var entries []Entry
 	data, err := os.ReadFile(entriesFile)
 	if err != nil {
@@ -306,6 +318,29 @@ func loadEntries() []Entry {
 	return entries
 }
 
+func deleteEntry(entry Entry) error {
+	existingEntries := loadEntries()
+
+	newEntries := make([]Entry, 0, len(existingEntries))
+	for _, existingEntry := range existingEntries {
+		if cmp.Equal(existingEntry, entry) {
+			log.Println("Deleting entry:", existingEntry.Name)
+			continue
+		}
+		newEntries = append(newEntries, existingEntry)
+	}
+
+	if len(existingEntries) == len(newEntries) {
+		return fmt.Errorf("Entry (%s) not found for deletion", entry.Name)
+	}
+
+	if err := saveEntriesToFile(newEntries); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func applyThemes(entry Entry) []error {
 	var errs []error
 
@@ -321,11 +356,6 @@ func applyNvim(theme string) error {
 		return fmt.Errorf("[Nvim] theme could not be validated.")
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("[Nvim] failed to get user home dir: %w", err)
-	}
-
 	themeFile := filepath.Join(homeDir, ".config/nvim/theme.conf")
 
 	themeParts := strings.Split(theme, ",")
@@ -338,8 +368,7 @@ func applyNvim(theme string) error {
 
 	content := colourschemeID + "\n" + themeName
 
-	err = os.WriteFile(themeFile, []byte(content), 0644)
-	if err != nil {
+	if err := os.WriteFile(themeFile, []byte(content), 0644); err != nil {
 		return fmt.Errorf("[Nvim] failed to write to 'theme.conf': %w", err)
 	}
 
@@ -355,11 +384,6 @@ func applyNvim(theme string) error {
 }
 
 func applyZellij(theme string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("[Zellij] failed to get user home dir: %w", err)
-	}
-
 	configPath := filepath.Join(homeDir, ZellijConfigFile)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -377,8 +401,7 @@ func applyZellij(theme string) error {
 		content = replacement + "\n" + content
 	}
 
-	err = os.WriteFile(configPath, []byte(content), 0644)
-	if err != nil {
+	if err = os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("[Zellij] failed to write updated config: %w", err)
 	}
 
@@ -386,11 +409,6 @@ func applyZellij(theme string) error {
 }
 
 func applyGhostty(theme string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("[Ghostty] failed to get user home dir: %w", err)
-	}
-
 	configPath := filepath.Join(homeDir, GhosttyConfigFile)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -408,7 +426,11 @@ func applyGhostty(theme string) error {
 		content = replacement + "\n" + content
 	}
 
-	return os.WriteFile(configPath, []byte(content), 0644)
+	if err = os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("[Ghostty] failed to write updated config: %w", err)
+	}
+
+	return nil
 }
 
 func initialModel() model {
@@ -445,10 +467,6 @@ func main() {
 		log.Fatalf("only available on macOS")
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("failed to get home dir: %v", err)
-	}
 	logLoc := filepath.Join(homeDir, StorageDir, "theme_switcher.log")
 	os.Remove(logLoc)
 	logFile, err := os.OpenFile(logLoc, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
