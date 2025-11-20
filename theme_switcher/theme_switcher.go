@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -95,7 +96,12 @@ func (m model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
-		applyThemes(m.entries[m.cursor])
+		errs := applyThemes(m.entries[m.cursor])
+		for _, err := range errs {
+			if err != nil {
+				log.Println(err)
+			}
+		}
 
 	case "a":
 		m.viewState = addEntry
@@ -303,11 +309,6 @@ func applyThemes(entry Entry) []error {
 	return errs
 }
 
-func applyNvim(theme string) error {
-
-	return nil
-}
-
 func applyZellij(theme string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -319,14 +320,45 @@ func applyZellij(theme string) error {
 		return fmt.Errorf("[Zellij] failed to read zellij config file: %w", err)
 	}
 
-	re := regexp.MustCompile(`^\s*theme\s+"([^"]+)"`)
-	matches := re.MatchString(string(data))
-	log.Println(matches)
+	re := regexp.MustCompile(`(?m)^\s*theme\s+"([^"]+)"`)
 	content := re.ReplaceAllString(string(data),
 		fmt.Sprintf("theme \"%s\"", theme),
 	)
 
 	log.Println(content)
+
+	return nil
+}
+
+func applyNvim(theme string) error {
+	if !strings.Contains(theme, ",") {
+		return fmt.Errorf("[Nvim] theme could not be validated.")
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("[Nvim] failed to get user home dir: %w", err)
+	}
+
+	themeFile := filepath.Join(homeDir, ".config/nvim/theme.conf")
+
+	themeParts := strings.Split(theme, ",")
+	colourschemeID := themeParts[0]
+	themeName := themeParts[1]
+
+	if colourschemeID == "" {
+		colourschemeID = "nil"
+	}
+
+	content := colourschemeID + "\n" + themeName
+
+	err = os.WriteFile(themeFile, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("[Nvim] failed to write to 'theme.conf': %w", err)
+	}
+
+	cmd := exec.Command("nvr", "--remote-send", ":ReloadTheme<CR>")
+	cmd.Run() //ignore error if nvim isn’t running
 
 	return nil
 }
