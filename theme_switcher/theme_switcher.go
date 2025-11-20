@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	StorageDir  = ".config/theme_switcher"
 	StorageFile = ".config/theme_switcher/theme_entries.json"
 
 	GhosttyConfigDir = ""
@@ -309,27 +310,6 @@ func applyThemes(entry Entry) []error {
 	return errs
 }
 
-func applyZellij(theme string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("[Zellij] failed to get user home dir: %w", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(homeDir, ZellijConfigFile))
-	if err != nil {
-		return fmt.Errorf("[Zellij] failed to read zellij config file: %w", err)
-	}
-
-	re := regexp.MustCompile(`(?m)^\s*theme\s+"([^"]+)"`)
-	content := re.ReplaceAllString(string(data),
-		fmt.Sprintf("theme \"%s\"", theme),
-	)
-
-	log.Println(content)
-
-	return nil
-}
-
 func applyNvim(theme string) error {
 	if !strings.Contains(theme, ",") {
 		return fmt.Errorf("[Nvim] theme could not be validated.")
@@ -363,31 +343,59 @@ func applyNvim(theme string) error {
 	return nil
 }
 
-func initialModel() model {
-	//test
-	// e := []Entry{
-	// {Name: "blue", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-	// {Name: "green", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-	// {Name: "red", Themes: ThemeList{Nvim: "tokyonight", Zellij: "nord", Ghostty: "Argonaut"}},
-	// }
+func applyZellij(theme string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("[Zellij] failed to get user home dir: %w", err)
+	}
 
+	configPath := filepath.Join(homeDir, ZellijConfigFile)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("[Zellij] failed to read zellij config file: %w", err)
+	}
+
+	content := string(data)
+
+	replacement := fmt.Sprintf(`theme "%s"`, theme)
+	themeRe := regexp.MustCompile(`(?m)^\s*theme\s+"[^"]+"\s*$`)
+
+	if themeRe.MatchString(content) {
+		content = themeRe.ReplaceAllString(content, replacement)
+	} else {
+		content = replacement + "\n" + content
+	}
+
+	err = os.WriteFile(configPath, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("[Zellij] failed to write updated config: %w", err)
+	}
+
+	return nil
+}
+
+func initialModel() model {
 	var inputs []textinput.Model = make([]textinput.Model, 4)
 	inputs[0] = textinput.New()
 	inputs[0].Width = 25
 	inputs[0].Prompt = ""
+	inputs[0].Placeholder = "entry-name"
 	inputs[0].Focus()
 
 	inputs[1] = textinput.New()
 	inputs[1].Prompt = ""
 	inputs[1].Width = 25
+	inputs[1].Placeholder = "theme-source,theme-name"
 
 	inputs[2] = textinput.New()
 	inputs[2].Prompt = ""
 	inputs[2].Width = 25
+	inputs[2].Placeholder = "theme-name"
 
 	inputs[3] = textinput.New()
 	inputs[3].Prompt = ""
 	inputs[3].Width = 25
+	inputs[3].Placeholder = "theme-name"
 
 	return model{
 		entries: loadEntries(),
@@ -396,8 +404,13 @@ func initialModel() model {
 }
 
 func main() {
-	os.Remove("app.log")
-	logFile, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("failed to get home dir: %v", err)
+	}
+	logLoc := filepath.Join(homeDir, StorageDir, "theme_switcher.log")
+	os.Remove(logLoc)
+	logFile, err := os.OpenFile(logLoc, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
