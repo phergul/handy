@@ -16,13 +16,21 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QSpinBox,
     QMessageBox,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl
+import glob
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import QSlider
-from PyQt6.QtGui import QPainter, QPen, QColor
+from PyQt6.QtGui import QPainter, QPen, QColor, QKeySequence
 from PyQt6.QtWidgets import QStyleOptionSlider, QStyle
+
+# QShortcut location can vary across PyQt6 builds; try widgets first then gui
+try:
+    from PyQt6.QtWidgets import QShortcut
+except Exception:
+    from PyQt6.QtGui import QShortcut
 
 
 class CompressionWorker(QThread):
@@ -127,12 +135,15 @@ class CompressionWorker(QThread):
             self.run_ffmpeg(cmd_pass2, pass_num=2, total_duration=duration)
 
             # 6. Cleanup Logs
-            # FFmpeg creates suffix-0.log and mbtree files
+            # Remove any ffmpeg pass/log artifacts that start with the pass_log_prefix
             try:
-                os.remove(f"{pass_log_prefix}-0.log")
-                os.remove(f"{pass_log_prefix}.mbtree")
-            except OSError:
-                pass  # Files might not exist if ffmpeg failed differently
+                for f in glob.glob(f"{pass_log_prefix}*"):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+            except Exception:
+                pass
 
             self.finished_signal.emit()
 
@@ -208,11 +219,15 @@ class DropZone(QLabel):
 
 class MarkerSlider(QSlider):
     """QSlider subclass that can draw start/end markers relative to duration."""
+    marker_changed = pyqtSignal(int, int)
+
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.start_ms = None
         self.end_ms = None
         self.duration_ms = 1
+        self._dragging_start = False
+        self._dragging_end = False
 
     def set_markers(self, start_ms, end_ms):
         self.start_ms = start_ms
@@ -257,12 +272,71 @@ class MarkerSlider(QSlider):
 
         painter.end()
 
+    def _groove_rect(self):
+        h = self.height()
+        groove_height = max(6, h // 8)
+        groove_top = (h - groove_height) // 2
+        groove = self.rect().adjusted(8, groove_top, -8, groove_top + groove_height - h)
+        return groove
+
+    def _ms_for_x(self, x):
+        groove = self._groove_rect()
+        if groove.width() <= 0:
+            return 0
+        ratio = (x - groove.left()) / float(groove.width())
+        ratio = min(max(ratio, 0.0), 1.0)
+        return int(ratio * self.duration_ms)
+
+    def mousePressEvent(self, event):
+        # Decide if user clicked near start or end marker (8px tolerance)
+        x = event.position().x() if hasattr(event, 'position') else event.x()
+        groove = self._groove_rect()
+        tol = 8
+        if self.start_ms is not None:
+            sx = groove.left() + int((self.start_ms / float(self.duration_ms)) * groove.width())
+            if abs(x - sx) <= tol:
+                self._dragging_start = True
+                return
+        if self.end_ms is not None:
+            ex = groove.left() + int((self.end_ms / float(self.duration_ms)) * groove.width())
+            if abs(x - ex) <= tol:
+                self._dragging_end = True
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._dragging_start or self._dragging_end:
+            x = event.position().x() if hasattr(event, 'position') else event.x()
+            ms = self._ms_for_x(x)
+            if self._dragging_start:
+                # ensure start <= end
+                if self.end_ms is not None and ms > self.end_ms:
+                    ms = self.end_ms
+                self.start_ms = ms
+            else:
+                # dragging end
+                if self.start_ms is not None and ms < self.start_ms:
+                    ms = self.start_ms
+                self.end_ms = ms
+            self.update()
+            self.marker_changed.emit(self.start_ms or 0, self.end_ms or 0)
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging_start or self._dragging_end:
+            self._dragging_start = False
+            self._dragging_end = False
+            return
+        super().mouseReleaseEvent(event)
+
 
 class VideoCompressorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MP4 Video Compressor")
-        self.resize(500, 600)
+        self.resize(900, 900)
+        # Use a more square default window so 16:9 previews fit comfortably
 
         self.current_file_path = None
         self.total_duration = 0.0
@@ -278,6 +352,13 @@ class VideoCompressorApp(QMainWindow):
         # 1.5 Video Preview
         self.video_widget = QVideoWidget()
         self.video_widget.setMinimumHeight(240)
+        # Ensure the video widget expands and keeps aspect ratio when resized
+        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        try:
+            # PyQt6: keep aspect ratio where supported
+            self.video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        except Exception:
+            pass
         self.layout.addWidget(self.video_widget)
 
         # Media player
@@ -306,7 +387,20 @@ class VideoCompressorApp(QMainWindow):
 
         # 2. File Info (Hidden by default)
         self.lbl_filename = QLabel("No file selected")
-        self.layout.addWidget(self.lbl_filename)
+        # Add a small layout for filename + output-dir chooser
+        fileinfo_layout = QHBoxLayout()
+        fileinfo_layout.addWidget(self.lbl_filename)
+        self.btn_choose_output = QPushButton("Change Output Dir")
+        self.btn_choose_output.setEnabled(False)
+        self.btn_choose_output.clicked.connect(self.choose_output_dir)
+        fileinfo_layout.addWidget(self.btn_choose_output)
+        self.layout.addLayout(fileinfo_layout)
+
+        self.lbl_output_dir = QLabel("")
+        self.layout.addWidget(self.lbl_output_dir)
+
+        # Track chosen output directory
+        self.output_dir = None
 
         # 3. Trimming Controls
         trim_layout = QHBoxLayout()
@@ -323,6 +417,22 @@ class VideoCompressorApp(QMainWindow):
         # Update markers when spin boxes change
         self.spin_start.valueChanged.connect(self.update_markers_from_spins)
         self.spin_end.valueChanged.connect(self.update_markers_from_spins)
+        # Small step buttons for fine adjustments
+        self.btn_start_minus = QPushButton("-0.5s")
+        self.btn_start_minus.clicked.connect(lambda: self.adjust_spin(self.spin_start, -0.5))
+        trim_layout.addWidget(self.btn_start_minus)
+
+        self.btn_start_plus = QPushButton("+0.5s")
+        self.btn_start_plus.clicked.connect(lambda: self.adjust_spin(self.spin_start, 0.5))
+        trim_layout.addWidget(self.btn_start_plus)
+
+        self.btn_end_minus = QPushButton("-0.5s")
+        self.btn_end_minus.clicked.connect(lambda: self.adjust_spin(self.spin_end, -0.5))
+        trim_layout.addWidget(self.btn_end_minus)
+
+        self.btn_end_plus = QPushButton("+0.5s")
+        self.btn_end_plus.clicked.connect(lambda: self.adjust_spin(self.spin_end, 0.5))
+        trim_layout.addWidget(self.btn_end_plus)
         # Buttons to capture current playback position
         self.btn_set_start = QPushButton("Set Start from Player")
         self.btn_set_start.setEnabled(False)
@@ -398,6 +508,11 @@ class VideoCompressorApp(QMainWindow):
                 "border: 2px solid #5cb85c; border-radius: 10px; padding: 30px;"
             )
 
+            # Default output dir to same folder as input unless chosen
+            self.output_dir = os.path.dirname(file_path)
+            self.lbl_output_dir.setText(f"Output dir: {self.output_dir}")
+            self.btn_choose_output.setEnabled(True)
+
             # Load into media player for preview and enable controls
             try:
                 self.player.setSource(QUrl.fromLocalFile(file_path))
@@ -407,6 +522,14 @@ class VideoCompressorApp(QMainWindow):
             # Connect player signals
             self.player.positionChanged.connect(self.on_position_changed)
             self.player.durationChanged.connect(self.on_duration_changed)
+
+            # Connect marker slider signal
+            self.position_slider.marker_changed.connect(self.on_marker_changed)
+
+            # Keyboard shortcuts
+            QShortcut(QKeySequence("Space"), self).activated.connect(self.toggle_play)
+            QShortcut(QKeySequence("S"), self).activated.connect(self.set_start_from_player)
+            QShortcut(QKeySequence("E"), self).activated.connect(self.set_end_from_player)
 
             self.btn_play.setEnabled(True)
             self.position_slider.setEnabled(True)
@@ -451,6 +574,28 @@ class VideoCompressorApp(QMainWindow):
         # Seek player to slider position
         self.player.setPosition(position_ms)
 
+    def on_marker_changed(self, start_ms: int, end_ms: int):
+        # Update spin boxes when markers dragged
+        try:
+            if start_ms is not None:
+                self.spin_start.blockSignals(True)
+                self.spin_start.setValue(round(start_ms / 1000.0, 2))
+                self.spin_start.blockSignals(False)
+            if end_ms is not None:
+                self.spin_end.blockSignals(True)
+                self.spin_end.setValue(round(end_ms / 1000.0, 2))
+                self.spin_end.blockSignals(False)
+        except Exception:
+            pass
+
+    def adjust_spin(self, spin_widget, delta_seconds: float):
+        try:
+            new_val = max(0.0, spin_widget.value() + delta_seconds)
+            spin_widget.setValue(round(new_val, 2))
+            self.update_markers_from_spins()
+        except Exception:
+            pass
+
     def set_start_from_player(self):
         pos_s = self.player.position() / 1000.0
         self.spin_start.setValue(round(pos_s, 2))
@@ -461,13 +606,20 @@ class VideoCompressorApp(QMainWindow):
         self.spin_end.setValue(round(pos_s, 2))
         self.update_markers_from_spins()
 
+    def choose_output_dir(self):
+        start_dir = self.output_dir or os.path.dirname(self.current_file_path) if self.current_file_path else os.path.expanduser("~")
+        chosen = QFileDialog.getExistingDirectory(self, "Select output directory", start_dir)
+        if chosen:
+            self.output_dir = chosen
+            self.lbl_output_dir.setText(f"Output dir: {self.output_dir}")
+
     def start_compression(self):
         output_name = self.txt_output_name.text()
         if not output_name.endswith(".mp4"):
             output_name += ".mp4"
 
-        # Determine output folder (same as input for now)
-        output_dir = os.path.dirname(self.current_file_path)
+        # Determine output folder (use chosen output_dir if set)
+        output_dir = self.output_dir or os.path.dirname(self.current_file_path)
         output_path = os.path.join(output_dir, output_name)
 
         # Setup Worker
