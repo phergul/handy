@@ -9,3 +9,6 @@ mp4_compress/go.sum
 *.log
 
 __pycache__/
+build/
+dist/
+*.spec

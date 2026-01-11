@@ -196,6 +196,7 @@ class VideoCompressorApp(QWidget):
         self.lbl_filename.setText(f"Selected: {filename}")
 
         try:
+            # Check if ffprobe is available
             cmd = [
                 "ffprobe",
                 "-v",
@@ -206,7 +207,15 @@ class VideoCompressorApp(QWidget):
                 "default=noprint_wrappers=1:nokey=1",
                 file_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else "ffprobe failed"
+                raise Exception(f"ffprobe error: {error_msg}")
+            
+            if not result.stdout.strip():
+                raise Exception("ffprobe returned no duration data")
+            
             duration = float(result.stdout.strip())
 
             self.total_duration = duration
@@ -233,8 +242,31 @@ class VideoCompressorApp(QWidget):
             self.btn_set_start.setEnabled(True)
             self.btn_set_end.setEnabled(True)
 
+        except FileNotFoundError:
+            QMessageBox.critical(
+                self,
+                "Missing Dependency",
+                "ffprobe (part of ffmpeg) is not installed or not found in PATH.\n\n"
+                "Please install ffmpeg:\n"
+                "• Linux: sudo apt install ffmpeg (or your package manager)\n"
+                "• Windows: Download from ffmpeg.org and add to PATH\n"
+                "• macOS: brew install ffmpeg"
+            )
+            self.lbl_filename.setText(f"Error: ffprobe not found")
+            self.drop_zone.setText("Drag & Drop Video Here\n(or click to browse)")
         except Exception as e:
-            self.lbl_filename.setText(f"Error reading file: {e}")
+            QMessageBox.warning(
+                self,
+                "Error Loading Video",
+                f"Could not load video information:\n{str(e)}\n\n"
+                f"File: {filename}\n\n"
+                "Make sure:\n"
+                "• The file is a valid video\n"
+                "• ffmpeg/ffprobe is installed\n"
+                "• You have read permissions for the file"
+            )
+            self.lbl_filename.setText(f"Error: {str(e)[:50]}")
+            self.drop_zone.setText("Drag & Drop Video Here\n(or click to browse)")
 
     def toggle_play(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
