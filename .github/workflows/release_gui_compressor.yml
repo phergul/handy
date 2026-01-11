@@ -38,6 +38,7 @@ jobs:
             --name GUIVideoCompressor-linux \
             --icon assets/icon.png \
             --add-data "assets:assets" \
+            --collect-all PyQt6 \
             main.py
         working-directory: gui_compressor
 
@@ -80,6 +81,7 @@ jobs:
             --name GUIVideoCompressor-windows \
             --icon assets/icon.ico \
             --add-data "assets;assets" \
+            --collect-all PyQt6 \
             main.py
         working-directory: gui_compressor
 
