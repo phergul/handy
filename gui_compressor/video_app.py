@@ -183,11 +183,14 @@ class VideoCompressorApp(QWidget):
         QShortcut(QKeySequence("S"), self).activated.connect(self.set_start_from_player)
         QShortcut(QKeySequence("E"), self).activated.connect(self.set_end_from_player)
 
-    # -- UI helpers and handlers --    def on_volume_changed(self, value: int):
-        \"\"\"Update audio output volume when slider changes.\"\"\"
+    # -- UI helpers and handlers --
+    
+    def on_volume_changed(self, value: int):
         volume = value / 100.0
         self.audio_output.setVolume(volume)
-        self.lbl_volume.setText(f\"{value}%\")    def load_video_info(self, file_path):
+        self.lbl_volume.setText(f"{value}%")
+    
+    def load_video_info(self, file_path):
         self.current_file_path = file_path
         filename = os.path.basename(file_path)
         self.lbl_filename.setText(f"Selected: {filename}")
