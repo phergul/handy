@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QMessageBox,
     QSizePolicy,
+    QSlider,
 )
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -80,6 +81,24 @@ class VideoCompressorApp(QWidget):
         controls_layout.addWidget(self.lbl_current_time)
         self.layout.addLayout(controls_layout)
 
+        # Volume control
+        volume_layout = QHBoxLayout()
+        volume_label = QLabel("Volume:")
+        volume_layout.addWidget(volume_label)
+        
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(100)
+        self.volume_slider.setMaximumWidth(150)
+        self.volume_slider.valueChanged.connect(self.on_volume_changed)
+        volume_layout.addWidget(self.volume_slider)
+        
+        self.lbl_volume = QLabel("100%")
+        self.lbl_volume.setMinimumWidth(40)
+        volume_layout.addWidget(self.lbl_volume)
+        volume_layout.addStretch()
+        self.layout.addLayout(volume_layout)
+
         # File info and output dir
         self.lbl_filename = QLabel("No file selected")
         fileinfo_layout = QHBoxLayout()
@@ -132,11 +151,13 @@ class VideoCompressorApp(QWidget):
 
         # Compression and output
         comp_layout = QHBoxLayout()
-        self.spin_mb = QSpinBox()
+        self.spin_mb = QDoubleSpinBox()
         self.spin_mb.setPrefix("Target: ")
         self.spin_mb.setSuffix(" MB")
-        self.spin_mb.setValue(10)
-        self.spin_mb.setRange(1, 10000)
+        self.spin_mb.setValue(10.0)
+        self.spin_mb.setRange(0.1, 10000.0)
+        self.spin_mb.setDecimals(2)
+        self.spin_mb.setSingleStep(0.5)
         comp_layout.addWidget(self.spin_mb)
         self.layout.addLayout(comp_layout)
 
@@ -162,8 +183,11 @@ class VideoCompressorApp(QWidget):
         QShortcut(QKeySequence("S"), self).activated.connect(self.set_start_from_player)
         QShortcut(QKeySequence("E"), self).activated.connect(self.set_end_from_player)
 
-    # -- UI helpers and handlers --
-    def load_video_info(self, file_path):
+    # -- UI helpers and handlers --    def on_volume_changed(self, value: int):
+        \"\"\"Update audio output volume when slider changes.\"\"\"
+        volume = value / 100.0
+        self.audio_output.setVolume(volume)
+        self.lbl_volume.setText(f\"{value}%\")    def load_video_info(self, file_path):
         self.current_file_path = file_path
         filename = os.path.basename(file_path)
         self.lbl_filename.setText(f"Selected: {filename}")
