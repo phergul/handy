@@ -34,12 +34,7 @@ jobs:
 
       - name: Build with PyInstaller (Linux)
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed \
-            --name GUIVideoCompressor-linux \
-            --icon assets/icon.png \
-            --add-data "assets:assets" \
-            --collect-all PyQt6 \
-            main.py
+          pyinstaller --noconfirm --clean GUIVideoCompressor-linux.spec
         working-directory: gui_compressor
 
       - name: Upload Linux artifact
@@ -74,15 +69,18 @@ jobs:
           im.save('assets/icon.ico')
         working-directory: gui_compressor
 
+      - name: Create Windows spec file
+        shell: bash
+        run: |
+          # Create Windows-specific spec from Linux spec
+          sed 's/GUIVideoCompressor-linux/GUIVideoCompressor-windows/g' GUIVideoCompressor-linux.spec > GUIVideoCompressor-windows.spec
+          sed -i "s/icon=\['assets\/icon.png'\]/icon=['assets\/icon.ico']/g" GUIVideoCompressor-windows.spec
+        working-directory: gui_compressor
+
       - name: Build with PyInstaller (Windows)
         shell: bash
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed \
-            --name GUIVideoCompressor-windows \
-            --icon assets/icon.ico \
-            --add-data "assets;assets" \
-            --collect-all PyQt6 \
-            main.py
+          pyinstaller --noconfirm --clean GUIVideoCompressor-windows.spec
         working-directory: gui_compressor
 
       - name: Upload Windows artifact

@@ -11,4 +11,3 @@ mp4_compress/go.sum
 __pycache__/
 build/
 dist/
-*.spec
