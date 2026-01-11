@@ -195,6 +195,30 @@ class VideoCompressorApp(QWidget):
         filename = os.path.basename(file_path)
         self.lbl_filename.setText(f"Selected: {filename}")
 
+        # Check if file exists and is readable
+        if not os.path.exists(file_path):
+            QMessageBox.critical(self, "File Not Found", f"The file does not exist:\n{file_path}")
+            self.lbl_filename.setText("Error: File not found")
+            self.drop_zone.setText("Drag & Drop Video Here\n(or click to browse)")
+            return
+        
+        if not os.path.isfile(file_path):
+            QMessageBox.critical(self, "Invalid File", f"The path is not a file:\n{file_path}")
+            self.lbl_filename.setText("Error: Not a file")
+            self.drop_zone.setText("Drag & Drop Video Here\n(or click to browse)")
+            return
+        
+        if not os.access(file_path, os.R_OK):
+            QMessageBox.critical(
+                self, 
+                "Permission Denied", 
+                f"Cannot read the file (permission denied):\n{file_path}\n\n"
+                f"Please check file permissions."
+            )
+            self.lbl_filename.setText("Error: Permission denied")
+            self.drop_zone.setText("Drag & Drop Video Here\n(or click to browse)")
+            return
+
         try:
             # Check if ffprobe is available
             cmd = [
@@ -207,7 +231,10 @@ class VideoCompressorApp(QWidget):
                 "default=noprint_wrappers=1:nokey=1",
                 file_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            # Clear LD_LIBRARY_PATH to prevent PyInstaller's bundled libs from conflicting with system ffprobe
+            env = os.environ.copy()
+            env.pop('LD_LIBRARY_PATH', None)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, env=env)
             
             if result.returncode != 0:
                 error_msg = result.stderr.strip() if result.stderr else "ffprobe failed"

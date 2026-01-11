@@ -100,7 +100,11 @@ class CompressionWorker(QThread):
             self.error_signal.emit(str(e))
 
     def run_ffmpeg(self, cmd, pass_num, total_duration):
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        # Clear LD_LIBRARY_PATH to prevent PyInstaller's bundled libs from conflicting with system ffmpeg
+        env = os.environ.copy()
+        env.pop('LD_LIBRARY_PATH', None)
+        
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, env=env)
 
         time_pattern = re.compile(r"time=(\d{2}):(\d{2}):(\d{2}\.\d+)")
 
