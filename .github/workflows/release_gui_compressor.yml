@@ -71,6 +71,7 @@ jobs:
         working-directory: gui_compressor
 
       - name: Build with PyInstaller (Windows)
+        shell: bash
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed \
             --name PyCompressor-windows \
