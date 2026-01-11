@@ -1,0 +1,3 @@
+PyQt6>=6.0
+
+# ffmpeg is also required
